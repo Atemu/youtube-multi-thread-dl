@@ -1,0 +1,43 @@
+#!/bin/bash
+
+#Debug
+#echo "Press CTRL+C to proceed."
+#trap "pkill -f 'sleep 1h'" INT
+#trap "set +x ; sleep 1h ; set -x" DEBUG
+
+set -e
+
+#Check for dependencies
+if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then echo "Help placeholder" && exit; fi
+if ! hash youtube-dl; then echo "Error: youtube-dl must be installed and executable." && exit; fi
+if ! hash aria2c; then echo "Error: aria2c must be installed and executable." && exit; fi
+if ! hash ffmpeg; then echo "Error: ffmpeg must be installed and executable." && exit; fi
+if ! hash sed; then echo "Error: sed must be installed and executable." && exit; fi
+#Check for youtube url
+if [[ ! "$1" == *"youtu.be"* ]] && [[ ! "$1" == *"youtube.com"* ]]; then echo "This script only supports \"https://youtube.com/\", falling back to default youtube-dl... (Run this script with \"-h\" or \"--help\" to get help)." && youtube-dl "$1" --ignore-config -f "$FV"",""$FA" -o "/$TO" && exit; fi
+#Vars
+OUTDIR="/sdcard/Movies"
+YTDLTMP="/sdcard/Movies/.data/.ytdl"
+TO="%(title)s.%(ext)s"
+FV="bestvideo[vcodec!=vp9]/best[vcodec!=vp9]"
+FA="140/bestaudio"
+YTDLCMD=$(youtube-dl "$1" --ignore-config -f "$FV"",""$FA" -o "/$TO" --get-url --get-filename)
+YTVURL=$(echo "$YTDLCMD" | sed -n 1p)
+YTAURL=$(echo "$YTDLCMD" | sed -n 3p)
+TVOUTPUT=$(echo "$YTDLCMD" | sed -n 2p)
+TAOUTPUT=$(echo "$YTDLCMD" | sed -n 4p)
+OUTPUT="$OUTDIR""$TVOUTPUT"
+ARIA_ARGS=--console-log-level\ notice\ --file-allocation=prealloc\ --allow-overwrite\ -s16\ -x16
+#Check for tempdir
+if [ ! -d "$YTDLTMP" ]; then mkdir "$YTDLTMP"; fi
+#Check if video has already been downloaded
+if [ -e  "$OUTPUT" ]; then read -r -p "File already exists. Overwrite? [Y/N]" overwrite; overwrite=${overwrite,,}; if [[ $overwrite =~ ^(yes|y)$ ]]; then echo "Deleting $OUTPUT" && rm -rf "$OUTPUT"; else exit; fi; fi
+#Download video through aria2c
+aria2c -o "$YTDLTMP""$TVOUTPUT" $ARIA_ARGS "$YTVURL"
+#Download audio through aria2c
+aria2c -o "$YTDLTMP""$TAOUTPUT" $ARIA_ARGS "$YTAURL"
+#Combine files
+ffmpeg -i "$YTDLTMP""$TVOUTPUT" -i "$YTDLTMP""$TAOUTPUT" -map 0:v -map 1:a -c copy "$OUTPUT" &&\
+#cleanup separate files
+rm -rf "$TVOUTPUT" && rm -rf "$TAOUTPUT"
+exit
